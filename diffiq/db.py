@@ -167,6 +167,19 @@ def get_diffs_for_stock(
     return [dict(r) for r in rows]
 
 
+def get_diffs_for_filing(
+    conn: sqlite3.Connection, filing_id: int, stock_id: int
+) -> list[dict[str, Any]]:
+    """Return diffs for a specific filing and stock, newest first."""
+    rows = conn.execute(
+        """SELECT * FROM diffs
+           WHERE stock_id = ? AND filing_id_new = ?
+           ORDER BY created_at DESC""",
+        (stock_id, filing_id),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_portfolio_summary(
     conn: sqlite3.Connection,
 ) -> list[dict[str, Any]]:
