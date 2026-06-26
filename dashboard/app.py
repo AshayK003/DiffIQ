@@ -79,11 +79,14 @@ def _get_cached_stock_data(stock_name: str):
 # Session init
 # ══════════════════════════════════════════════════════════════════
 if "db_inited" not in st.session_state:
-    conn = get_connection()
+    # Use a fresh connection for one-time init — avoids threading issues
+    # with @st.cache_resource when Streamlit reruns from a different thread.
+    _init_conn = init_db(DB_PATH)
     for s in STOCKS:
         bse_code = s.get("bse_code") or s["name"]
-        upsert_stock(conn, bse_code, s["name"])
-    conn.commit()
+        upsert_stock(_init_conn, bse_code, s["name"])
+    _init_conn.commit()
+    _init_conn.close()
     st.session_state["db_inited"] = True
 
 # ══════════════════════════════════════════════════════════════════
