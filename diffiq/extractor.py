@@ -6,10 +6,8 @@ for single-responsibility — extraction belongs with the extractor).
 
 import io
 import logging
-import os
 import re
 import sqlite3
-import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -87,18 +85,9 @@ def _download_pdf(pdf_url: str) -> bytes | None:
 
 
 def _extract_text_from_pdf(pdf_url: str, raw_bytes: bytes) -> ExtractionResult:
-    """Extract text from PDF bytes using pypdf.
-
-    Streams to a temp file to avoid holding the full PDF in memory during parsing.
-    """
-    # Write to temp file for streaming extraction
-    tmp_path = None
+    """Extract text from PDF bytes using pypdf."""
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp.write(raw_bytes)
-            tmp_path = tmp.name
-
-        reader = pypdf.PdfReader(tmp_path)
+        reader = pypdf.PdfReader(io.BytesIO(raw_bytes))
         pages: list[str] = []
         for page in reader.pages:
             text = page.extract_text()
@@ -107,9 +96,6 @@ def _extract_text_from_pdf(pdf_url: str, raw_bytes: bytes) -> ExtractionResult:
     except Exception as e:
         logger.warning("pypdf extraction failed for %s: %s", pdf_url, e)
         return ExtractionResult(text=None, error=f"Corrupted PDF: {e}")
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
 
     full_text: str = "\n".join(pages)
 

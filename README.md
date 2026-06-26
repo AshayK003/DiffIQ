@@ -67,7 +67,7 @@ DiffIQ automates the observation layer. It polls the BSE Corporate Announcements
 | 3 | **extractor.py** | Downloads each PDF via `httpx`, extracts text with `pypdf`. Rejects PDFs >50MB and scanned PDFs (text <100 chars). Caps stored text at 1MB. Returns `ExtractionResult`. |
 | 4 | **classifier.py** | Classifies filing subjects into types (AUDIT_REPORT, FINANCIAL_RESULT, RPT, PROMOTER_CHANGE, BOARD_OUTCOME, ROUTINE) using pre-compiled regex patterns. |
 | 5 | **extractor.py** (2nd pass) | Splits extracted text into logical sections by filing-type-specific header regexes (e.g. "Opinion", "Basis for Opinion" for audit reports). Falls back to generic numbered-section patterns, then to a single "Body" section. |
-| 6 | **differ.py** | Aligns new sections to the most recent same-type filing using `difflib.SequenceMatcher` (header similarity first, then text preview). Generates unified diffs for aligned sections. Stores diff records marked `changed` if output >100 chars. |
+| 6 | **differ.py** | Aligns new sections to the most recent same-type filing using `difflib.SequenceMatcher` (header similarity first, then text preview). Generates unified diffs for aligned sections. Stores diff records marked `changed` if output >50 chars. |
 | 7 | **dashboard/** | Streamlit app with portfolio overview grid, stock selector, filing expanders, section diff UI. |
 
 ### Schema (4 tables)
@@ -167,10 +167,10 @@ Edit `diffiq/config.py`, or use the dashboard **Watchlist Management** section:
 
 ```python
 STOCKS = [
-    {"symbol": "VEDL", "name": "VEDL", "bse_code": "500295"},
-    {"symbol": "HDFCBANK", "name": "HDFCBANK", "bse_code": "500180"},
+    {"name": "VEDL", "bse_code": "500295"},
+    {"name": "HDFCBANK", "bse_code": "500180"},
     # ETFs have empty bse_code — skipped by pipeline but shown in dashboard
-    {"symbol": "NEXT50IETF", "name": "NEXT50IETF", "bse_code": ""},
+    {"name": "NEXT50IETF", "bse_code": ""},
 ]
 ```
 
@@ -206,7 +206,7 @@ dashboard/
 .streamlit/
 ├── config.toml          # Streamlit theme (green, sans-serif, fast reruns)
 ├── style.css            # Stock cards, badges, diff badge styles
-tests/                   # 97 tests across 10 test files
+tests/                   # 97 tests across 12 files
 data/                    # gitignored — runtime SQLite DB + PDF cache
 ```
 
