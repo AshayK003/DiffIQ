@@ -9,6 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import sqlite3
+
 from diffiq.config import STOCKS, DB_PATH
 from diffiq.dashboard_utils import status_badge_html
 from diffiq.db import (
@@ -19,7 +21,7 @@ from diffiq.db import (
     get_stock_by_bse_code,
     upsert_stock,
 )
-from diffiq.schema import init_db
+from diffiq.schema import SCHEMA_SQL, init_db
 
 st.set_page_config(
     page_title="DiffIQ Corporate Filing Monitor",
@@ -32,8 +34,18 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════════════════
 @st.cache_resource
 def get_connection():
-    """Single DB connection per session — avoids re-init on every rerun."""
-    return init_db(DB_PATH)
+    """Single DB connection per session — avoids re-init on every rerun.
+
+    check_same_thread=False is required because Streamlit may invoke
+    this cached-resource getter from a different thread on rerun.
+    The connection is created directly rather than calling init_db() to
+    guarantee the parameter is applied regardless of stale .pyc / sys.modules.
+    """
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA_SQL)
+    conn.commit()
+    return conn
 
 
 # ══════════════════════════════════════════════════════════════════
