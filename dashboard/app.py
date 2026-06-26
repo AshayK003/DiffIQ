@@ -267,47 +267,45 @@ st.divider()
 # ══════════════════════════════════════════════════════════════════
 # Watchlist Management
 # ══════════════════════════════════════════════════════════════════
-with st.expander("Manage Watchlist", expanded=False):
-    col1, col2 = st.columns(2)
+st.subheader("Watchlist Management", divider=True)
 
-    with col1:
-        st.markdown("**Add Stock**")
-        add_name = st.text_input(
-            "Symbol", placeholder="e.g. INFY", key="add_name",
-        )
-        add_bse = st.text_input(
-            "BSE Code", placeholder="e.g. 500209", key="add_bse",
-        )
-        if st.button("Add to Watchlist", type="primary"):
-            if add_name and add_bse:
-                conn = get_connection()
-                db.add_stock(
-                    conn,
-                    add_bse.strip(),
-                    add_name.strip().upper(),
-                )
-                conn.commit()
-                st.success(
-                    f"Added {add_name.strip().upper()} ({add_bse.strip()})"
-                )
-                st.rerun()
-            else:
-                st.warning("Both symbol and BSE code are required.")
+col1, col2 = st.columns(2)
 
-    with col2:
-        st.markdown("**Current Watchlist**")
-        conn = get_connection()
-        watchlist = db.get_all_stocks(conn)
-        if watchlist:
-            for s in watchlist:
-                c1, c2 = st.columns([3, 1])
-                c1.write(f"{s['name']} ({s['bse_code']})")
-                if c2.button("Remove", key=f"rm_{s['id']}"):
-                    db.remove_stock(conn, s["id"])
-                    conn.commit()
-                    st.rerun()
+with col1:
+    st.markdown("**Add Stock**")
+    add_name = st.text_input(
+        "Symbol", placeholder="e.g. INFY", key="add_name",
+    )
+    add_bse = st.text_input(
+        "BSE Code", placeholder="e.g. 500209", key="add_bse",
+    )
+    if st.button("Add to Watchlist", type="primary"):
+        if add_name and add_bse:
+            conn = get_connection()
+            db.add_stock(
+                conn,
+                add_bse.strip(),
+                add_name.strip().upper(),
+            )
+            conn.commit()
+            st.rerun()
         else:
-            st.write("No stocks in watchlist.")
+            st.warning("Both symbol and BSE code are required.")
+
+with col2:
+    st.markdown("**Current Watchlist**")
+    conn = get_connection()
+    watchlist = db.get_all_stocks(conn)
+    if watchlist:
+        for s in watchlist:
+            c1, c2 = st.columns([3, 1])
+            c1.write(f"{s['name']} ({s['bse_code']})")
+            if c2.button("Remove", key=f"rm_{s['id']}"):
+                db.remove_stock(conn, s["id"])
+                conn.commit()
+                st.rerun()
+    else:
+        st.write("No stocks in watchlist.")
 
 st.caption(
     "Data source: BSE Corporate Announcements API. "

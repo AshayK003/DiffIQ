@@ -163,7 +163,7 @@ Opens a browser UI at `localhost:8501`. Shows:
 
 ### Stock Watchlist
 
-Edit `diffiq/config.py`, or manage from the dashboard (expand **Manage Watchlist**):
+Edit `diffiq/config.py`, or use the dashboard **Watchlist Management** section:
 
 ```python
 STOCKS = [
@@ -301,7 +301,7 @@ Example: adding a "MERGER" type:
 
 ### Adding a new stock
 
-Add to the watchlist via the dashboard (expand **Manage Watchlist**) or edit `config.py:STOCKS`. Find the BSE scrip code (numeric) from the BSE website stock profile page.
+Add to the watchlist via the dashboard **Watchlist Management** section or edit `config.py:STOCKS`. Find the BSE scrip code (numeric) from the BSE website stock profile page.
 
 ### Customizing the dashboard
 
