@@ -14,6 +14,8 @@ import sqlite3
 from diffiq.config import STOCKS, DB_PATH
 from diffiq.dashboard_utils import status_badge_html
 import diffiq.db as db
+import importlib
+importlib.reload(db)  # Force fresh module on Streamlit hot-reload
 from diffiq.schema import SCHEMA_SQL, init_db
 
 st.set_page_config(
