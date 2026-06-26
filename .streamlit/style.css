@@ -1,10 +1,10 @@
-/* Stock cards */
+/* Stock cards — dark theme */
 .stock-card {
-    border: 1px solid #EAEAEA;
+    border: 1px solid #2A2F3A;
     border-radius: 8px;
     padding: 16px;
     text-align: center;
-    background: #F9F9F8;
+    background: #1B1F26;
     margin-bottom: 4px;
 }
 .stock-card-name {
@@ -12,11 +12,11 @@
     font-size: 1rem;
 }
 .stock-card-code {
-    color: #888;
+    color: #8892A0;
     font-size: 0.8rem;
 }
 
-/* Status badges */
+/* Status badges — dark theme */
 .badge {
     display: inline-block;
     padding: 2px 10px;
@@ -25,19 +25,19 @@
     font-weight: 600;
     white-space: nowrap;
 }
-.badge-ready { background: #EDF3EC; color: #346538; }
-.badge-error { background: #FDEBEC; color: #9F2F2D; }
-.badge-queued { background: #FBF3DB; color: #956400; }
-.badge-no-pdf { background: #F0F0F0; color: #666; }
-.badge-downloading { background: #E1F3FE; color: #1F6C9F; }
+.badge-ready { background: #1A2E1A; color: #81C784; }
+.badge-error { background: #2E1A1A; color: #EF9A9A; }
+.badge-queued { background: #2E2A1A; color: #FFD54F; }
+.badge-no-pdf { background: #262A30; color: #8892A0; }
+.badge-downloading { background: #1A2A3E; color: #64B5F6; }
 
-/* Section diff badge */
+/* Section diff badge — dark theme */
 .diff-badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #EDF3EC;
-    color: #346538;
+    background: #1A2E1A;
+    color: #81C784;
     padding: 2px 10px;
     border-radius: 9999px;
     font-size: 0.75rem;
