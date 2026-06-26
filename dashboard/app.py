@@ -215,9 +215,20 @@ with col2:
     watchlist = db.get_all_stocks(conn)
     if watchlist:
         for s in watchlist:
-            c1, c2 = st.columns([3, 1])
+            c1, c2, c3 = st.columns([2, 1, 1])
             c1.write(f"{s['name']} ({s['bse_code']})")
-            if c2.button("Remove", key=f"rm_{s['id']}"):
+            if c2.button("Fetch", key=f"fetch_{s['id']}"):
+                with st.spinner(f"Fetching filings for {s['name']}..."):
+                    from diffiq.pipeline import process_stock_announcements
+                    stats = process_stock_announcements(
+                        conn, s["bse_code"], s["name"], stock_id=s["id"],
+                    )
+                    conn.commit()
+                st.success(
+                    f"{s['name']}: {stats['new_count']} new filings"
+                )
+                st.rerun()
+            if c3.button("Remove", key=f"rm_{s['id']}"):
                 db.remove_stock(conn, s["id"])
                 conn.commit()
                 st.rerun()
