@@ -18,7 +18,19 @@ IMPLEMENTATION.md
 IDEA.md
 RESEARCH.md
 OSS_RESEARCH.md
+NOTES.md
+PLAN.md
+DESIGN.md
+
+# IDE / dev tooling
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Pytest
+.pytest_cache/

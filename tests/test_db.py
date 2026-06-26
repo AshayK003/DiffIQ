@@ -171,6 +171,12 @@ class TestDiffs:
         stock_id = upsert_stock(conn, "531456", "VEDL")
         fid = insert_filing(conn, stock_id, "diff-uuid", "2026-06-25", "Test", "https://ex.com/diff.pdf")
 
+        # Insert a section so the diff FK constraint is satisfied
+        conn.execute(
+            "INSERT INTO sections (id, filing_id, header, text, section_idx) VALUES (1, ?, 'Opinion', 'test text', 0)",
+            (fid,),
+        )
+
         diff_id = insert_diff(conn, {
             "stock_id": stock_id,
             "filing_id_new": fid,

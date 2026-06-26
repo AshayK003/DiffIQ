@@ -88,3 +88,33 @@ class TestClassifier:
         assert count == 0
 
         conn.close()
+
+    def test_pending_persists_across_connections(self) -> None:
+        """classify_pending_filings commits data visible from another connection."""
+        import tempfile, os
+        db_path = tempfile.mktemp(suffix=".db")
+
+        # Connection 1: insert + classify + commit (inside classify_pending_filings)
+        conn1 = init_db(db_path)
+        conn1.execute(
+            "INSERT INTO stocks (id, bse_code, name) VALUES (1, '500295', 'VEDL')"
+        )
+        conn1.execute(
+            """INSERT INTO filings (id, stock_id, filing_uuid, filing_date, subject, pdf_url, status)
+               VALUES (1, 1, 'cross-uuid', '2026-01-01', 'Audit Report', 'https://ex.com/1.pdf', 'READY')"""
+        )
+        conn1.commit()
+
+        count = classify_pending_filings(conn1)
+        assert count == 1
+        conn1.close()
+
+        # Connection 2: read without any prior connection — should see the commit
+        conn2 = init_db(db_path)
+        row = conn2.execute(
+            "SELECT filing_type FROM filings WHERE id = 1"
+        ).fetchone()
+        assert row is not None
+        assert row["filing_type"] == "AUDIT_REPORT"
+        conn2.close()
+        os.unlink(db_path)

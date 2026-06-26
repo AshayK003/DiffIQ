@@ -6,13 +6,16 @@ for single-responsibility — extraction belongs with the extractor).
 
 import io
 import logging
+import os
 import re
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 import pypdf
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from diffiq.config import PDF_DOWNLOAD_TIMEOUT
 from diffiq.db import insert_sections
@@ -24,6 +27,9 @@ USER_AGENT: str = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0.0.0 Safari/537.36"
 )
+
+# Maximum PDF size to download (50MB)
+MAX_PDF_SIZE: int = 50 * 1024 * 1024
 
 
 @dataclass
@@ -38,33 +44,61 @@ class ExtractionResult:
     error: str | None
 
 
-def download_pdf_text(pdf_url: str) -> ExtractionResult:
-    """Download a PDF and extract its text using pypdf.
+def _download_pdf(pdf_url: str) -> bytes | None:
+    """Download a PDF with retry support and size checking.
 
     Args:
         pdf_url: Full URL to the PDF file.
 
     Returns:
-        ExtractionResult with text on success, or error description on failure.
+        Raw PDF bytes on success, None on failure.
     """
-    try:
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        reraise=True,
+        before_sleep=lambda rs: logger.warning(
+            "PDF download retry %d for %s", rs.attempt_number, pdf_url,
+        ),
+    )
+    def _inner() -> bytes:
         with httpx.Client(timeout=PDF_DOWNLOAD_TIMEOUT) as client:
-            resp = client.get(
-                pdf_url,
-                headers={"User-Agent": USER_AGENT},
-            )
+            resp = client.get(pdf_url, headers={"User-Agent": USER_AGENT})
             resp.raise_for_status()
+
         # Reject oversized responses (>50MB) to prevent OOM
         content_length = resp.headers.get("content-length")
-        if content_length and int(content_length) > 50 * 1024 * 1024:
-            logger.warning("PDF too large: %s — %s bytes", pdf_url, content_length)
-            return ExtractionResult(text=None, error="PDF too large (content-length > 50MB)")
-    except httpx.HTTPError as e:
-        logger.warning("PDF download failed: %s — %s", pdf_url, e)
-        return ExtractionResult(text=None, error=f"Download failed: {e}")
+        if content_length and int(content_length) > MAX_PDF_SIZE:
+            raise ValueError(f"PDF too large: {content_length} bytes")
+
+        return resp.content
 
     try:
-        reader = pypdf.PdfReader(io.BytesIO(resp.content))
+        return _inner()
+    except httpx.HTTPError as e:
+        logger.warning("PDF download failed: %s — %s", pdf_url, e)
+        return None
+    except httpx.InvalidURL as e:
+        logger.warning("Invalid PDF URL: %s — %s", pdf_url, e)
+        return None
+    except ValueError as e:
+        logger.warning("PDF rejected: %s — %s", pdf_url, e)
+        return None
+
+
+def _extract_text_from_pdf(pdf_url: str, raw_bytes: bytes) -> ExtractionResult:
+    """Extract text from PDF bytes using pypdf.
+
+    Streams to a temp file to avoid holding the full PDF in memory during parsing.
+    """
+    # Write to temp file for streaming extraction
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(raw_bytes)
+            tmp_path = tmp.name
+
+        reader = pypdf.PdfReader(tmp_path)
         pages: list[str] = []
         for page in reader.pages:
             text = page.extract_text()
@@ -73,6 +107,9 @@ def download_pdf_text(pdf_url: str) -> ExtractionResult:
     except Exception as e:
         logger.warning("pypdf extraction failed for %s: %s", pdf_url, e)
         return ExtractionResult(text=None, error=f"Corrupted PDF: {e}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
     full_text: str = "\n".join(pages)
 
@@ -88,6 +125,25 @@ def download_pdf_text(pdf_url: str) -> ExtractionResult:
         return ExtractionResult(text=None, error="Scanned PDF (text < 100 chars)")
 
     return ExtractionResult(text=full_text, error=None)
+
+
+def download_pdf_text(pdf_url: str) -> ExtractionResult:
+    """Download a PDF and extract its text using pypdf.
+
+    Args:
+        pdf_url: Full URL to the PDF file.
+
+    Returns:
+        ExtractionResult with text on success, or error description on failure.
+    """
+    raw_bytes = _download_pdf(pdf_url)
+    if raw_bytes is None:
+        return ExtractionResult(text=None, error=f"Download failed for {pdf_url}")
+    if len(raw_bytes) > MAX_PDF_SIZE:
+        logger.warning("PDF too large (downloaded): %s — %d bytes", pdf_url, len(raw_bytes))
+        return ExtractionResult(text=None, error="PDF too large (>50MB)")
+    return _extract_text_from_pdf(pdf_url, raw_bytes)
+
 
 SECTION_HEADERS: dict[str, list[str]] = {
     "AUDIT_REPORT": [

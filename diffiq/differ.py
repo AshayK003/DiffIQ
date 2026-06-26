@@ -6,6 +6,7 @@ import sqlite3
 from typing import Any
 
 from diffiq.db import (
+    get_last_filing_of_type,
     get_sections,
     insert_diff,
 )
@@ -13,6 +14,11 @@ from diffiq.db import (
 logger = logging.getLogger(__name__)
 
 ALIGNMENT_THRESHOLD: float = 0.6
+# Minimum diff output length to flag as "changed". Unified-diff headers alone
+# account for ~50 chars, so thresholds below 30 risk flagging whitespace noise.
+# This threshold only controls visual prominence (the "Changed" badge in the
+# UI); the full diff text is always stored in the database.
+DIFF_CHANGED_MIN_LEN: int = 50
 
 
 def find_prior_filing(
@@ -23,6 +29,8 @@ def find_prior_filing(
 ) -> dict[str, Any] | None:
     """Find the most recent same-type filing for a stock, excluding current.
 
+    Delegates to get_last_filing_of_type with the exclude_id parameter.
+
     Args:
         conn: SQLite connection.
         stock_id: Stock ID.
@@ -32,17 +40,9 @@ def find_prior_filing(
     Returns:
         Prior filing dict or None if none found.
     """
-    row = conn.execute(
-        """SELECT * FROM filings
-           WHERE stock_id = ? AND filing_type = ? AND id != ?
-             AND status NOT IN ('QUEUED')
-             AND status NOT LIKE 'ERROR_%'
-           ORDER BY filing_date DESC, created_at DESC
-           LIMIT 1""",
-        (stock_id, filing_type, current_filing_id),
-    ).fetchone()
-    return dict(row) if row else None
-
+    return get_last_filing_of_type(
+        conn, stock_id, filing_type, exclude_id=current_filing_id,
+    )
 
 def align_sections(
     new_sections: list[dict[str, Any]],
@@ -112,7 +112,7 @@ def diff_section(new_text: str, old_text: str) -> tuple[str, bool]:
 
     Returns:
         Tuple of (diff_text_string, changed_boolean).
-        changed is True when diff output exceeds 100 characters.
+        changed is True when diff output exceeds DIFF_CHANGED_MIN_LEN characters.
     """
     new_lines = (new_text or "").splitlines(keepends=True)
     old_lines = (old_text or "").splitlines(keepends=True)
@@ -128,7 +128,7 @@ def diff_section(new_text: str, old_text: str) -> tuple[str, bool]:
     )
 
     diff_text = "".join(diff_lines)
-    changed = len(diff_text) > 100
+    changed = len(diff_text) > DIFF_CHANGED_MIN_LEN
     return diff_text, changed
 
 
@@ -172,6 +172,11 @@ def run_diffs_for_filing(
         diff_text, changed = diff_section(
             new_sec.get("text", ""), old_text
         )
+
+        # New sections with no prior match get a placeholder diff
+        if old_sec is None:
+            diff_text = diff_text or "[New section — no equivalent in prior filing]"
+            changed = True
 
         diff_data = {
             "stock_id": stock_id,

@@ -62,11 +62,17 @@ def _get_cached_filings(stock_name: str, bse_code_for_cache: str):
     if not stock:
         return []
     conn = get_connection()
-    bse_code = stock.get("bse_code") or stock["symbol"]
+    bse_code = stock.get("bse_code") or stock["name"]
     row = get_stock_by_bse_code(conn, bse_code)
     if not row:
         return []
     return get_filings_for_stock(conn, row["id"], limit=50)
+
+
+@st.cache_data(ttl=30)
+def _get_cached_stock_data(stock_name: str):
+    """Stock data dict by name, cached for 30s."""
+    return next((s for s in STOCKS if s["name"] == stock_name), None)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -75,7 +81,7 @@ def _get_cached_filings(stock_name: str, bse_code_for_cache: str):
 if "db_inited" not in st.session_state:
     conn = get_connection()
     for s in STOCKS:
-        bse_code = s.get("bse_code") or s["symbol"]
+        bse_code = s.get("bse_code") or s["name"]
         upsert_stock(conn, bse_code, s["name"])
     conn.commit()
     st.session_state["db_inited"] = True
@@ -143,7 +149,7 @@ bse_code = stock_data.get("bse_code") or "-"
 st.caption(f"BSE Code: {bse_code}")
 
 with st.spinner("Loading filings..."):
-    bse_cache_key = stock_data.get("bse_code") or stock_data["symbol"]
+    bse_cache_key = stock_data.get("bse_code") or stock_data["name"]
     filings = _get_cached_filings(selected_stock, bse_cache_key)
 
 # ══════════════════════════════════════════════════════════════════

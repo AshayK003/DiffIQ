@@ -31,10 +31,20 @@ class TestGetDiffsForFiling:
         f1 = insert_filing(conn, s1, "u1", "2026-06-01", "Filing 1", "https://ex.com/1.pdf")
         f2 = insert_filing(conn, s2, "u2", "2026-06-01", "Filing 2", "https://ex.com/2.pdf")
 
+        # Insert sections so diff FK constraint is satisfied
+        conn.execute(
+            "INSERT INTO sections (id, filing_id, header, text, section_idx) VALUES (1, ?, 'Opinion', 'v1', 0)",
+            (f1,),
+        )
+        conn.execute(
+            "INSERT INTO sections (id, filing_id, header, text, section_idx) VALUES (2, ?, 'Opinion', 'v2', 0)",
+            (f2,),
+        )
+
         # Insert diffs: one for stock1/filing1, one for stock2/filing2
         insert_diff(conn, {"stock_id": s1, "filing_id_new": f1, "section_id_new": 1,
                            "section_header": "Opinion", "diff_text": "--- old\n+++ new", "changed": 1})
-        insert_diff(conn, {"stock_id": s2, "filing_id_new": f2, "section_id_new": 1,
+        insert_diff(conn, {"stock_id": s2, "filing_id_new": f2, "section_id_new": 2,
                            "section_header": "Opinion", "diff_text": "--- old\n+++ new", "changed": 1})
         conn.commit()
 

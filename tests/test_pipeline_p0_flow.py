@@ -184,3 +184,128 @@ class TestPipelineFlow:
         assert count == 0
 
         conn.close()
+
+
+class TestBacklogFlow:
+    """run_backlog() with mocked external dependencies."""
+
+    def test_backlog_empty(self) -> None:
+        """run_backlog handles no pending filings gracefully."""
+        from diffiq.pipeline import run_backlog
+        # Empty DB — should not raise
+        run_backlog()
+
+    @patch("diffiq.pipeline.download_pdf_text")
+    def test_backlog_no_pdf_url(self, mock_download) -> None:
+        """run_backlog skips filings without a PDF URL."""
+        conn = init_db(":memory:")
+        stock_id = upsert_stock(conn, "500295", "VEDL")
+        fid = insert_filing(
+            conn, stock_id, "bl-uuid", "2026-07-01",
+            "No PDF Filing", "",
+        )
+        update_filing_status(conn, fid, "ERROR_DOWNLOAD")
+        conn.commit()
+        conn.close()
+
+        from diffiq.pipeline import run_backlog
+        run_backlog()  # should skip the empty-PDF filing, not crash
+        # (no assertion needed — just confirming no crash)
+
+    @patch("diffiq.pipeline.download_pdf_text")
+    @patch("diffiq.pipeline.DB_PATH")
+    def test_backlog_with_retry(self, mock_db_path, mock_download) -> None:
+        """run_backlog retries a failed filing successfully."""
+        import tempfile, os
+        db_path = tempfile.mktemp(suffix=".db")
+        mock_db_path.__str__.return_value = db_path
+        mock_db_path.__fspath__.return_value = db_path
+
+        conn = init_db(db_path)
+        stock_id = upsert_stock(conn, "500295", "VEDL")
+        fid = insert_filing(
+            conn, stock_id, "bl-retry-uuid", "2026-07-01",
+            "Retry Filing", "https://ex.com/retry.pdf",
+        )
+        update_filing_status(conn, fid, "ERROR_EXTRACTION")
+        update_filing_type(conn, fid, "AUDIT_REPORT")
+        conn.commit()
+        conn.close()
+
+        mock_download.return_value = ExtractionResult(
+            text="Opinion\nAudited financial statements are correct.\n"
+                 "Basis\nConducted in accordance with auditing standards.",
+            error=None,
+        )
+
+        from diffiq.pipeline import run_backlog
+        run_backlog()  # uses mocked DB_PATH
+
+        # Verify: filing should now be READY
+        verify = init_db(db_path)
+        row = verify.execute(
+            "SELECT status, raw_text FROM filings WHERE id = ?", (fid,)
+        ).fetchone()
+        assert row is not None
+        assert row["status"] == "READY"
+        assert row["raw_text"] is not None
+        verify.close()
+        os.unlink(db_path)
+
+
+class TestPipelineExceptionHandling:
+    """Error isolation and recovery in run_daily_pipeline."""
+
+    @patch("diffiq.pipeline.sleep")
+    @patch("diffiq.pipeline.download_pdf_text")
+    @patch("diffiq.pipeline.fetch_manifest")
+    def test_pipeline_download_exception_isolation(
+        self, mock_fetch, mock_download, mock_sleep,
+    ) -> None:
+        """A future.exception() from one filing doesn't crash remaining filings."""
+        conn = init_db(":memory:")
+
+        # Return two filings: one crashes with an exception, one succeeds
+        mock_fetch.return_value = [
+            {
+                "filing_uuid": "bad-uuid",
+                "subject": "Bad Filing",
+                "filing_date": "2026-07-01",
+                "pdf_url": "https://example.com/bad.pdf",
+                "filing_type": "",
+            },
+            {
+                "filing_uuid": "good-uuid",
+                "subject": "Good Filing",
+                "filing_date": "2026-07-01",
+                "pdf_url": "https://example.com/good.pdf",
+                "filing_type": "",
+            },
+        ]
+
+        def side_effect(url):
+            if "bad" in url:
+                raise httpx.InvalidURL("Malformed URL: spaces in path")
+            return ExtractionResult(
+                text="Opinion text for the good filing.\n" "Basis for Opinion\nStandard procedures.",
+                error=None,
+            )
+
+        import httpx
+        mock_download.side_effect = side_effect
+
+        from diffiq.pipeline import run_daily_pipeline
+        run_daily_pipeline(conn=conn)
+
+        # Bad filing should be ERROR_DOWNLOAD
+        bad = get_filing_by_uuid(conn, "bad-uuid")
+        assert bad is not None
+        assert bad["status"] == "ERROR_DOWNLOAD"
+        assert "Exception" in (bad.get("error") or "")
+
+        # Good filing should be READY
+        good = get_filing_by_uuid(conn, "good-uuid")
+        assert good is not None
+        assert good["status"] == "READY"
+
+        conn.close()

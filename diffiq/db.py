@@ -26,13 +26,20 @@ def insert_filing(
     subject: str | None,
     pdf_url: str,
 ) -> int:
-    """Insert a new filing. Returns filing id."""
-    cur = conn.execute(
-        """INSERT INTO filings (stock_id, filing_uuid, filing_date, subject, pdf_url)
+    """Insert a new filing. Returns filing id.
+
+    Uses INSERT OR IGNORE so a concurrent pipeline instance inserting the same
+    filing_uuid does not crash — instead returns the existing filing's id.
+    """
+    conn.execute(
+        """INSERT OR IGNORE INTO filings (stock_id, filing_uuid, filing_date, subject, pdf_url)
            VALUES (?, ?, ?, ?, ?)""",
         (stock_id, filing_uuid, filing_date, subject, pdf_url),
     )
-    return cur.lastrowid
+    row = conn.execute(
+        "SELECT id FROM filings WHERE filing_uuid = ?", (filing_uuid,)
+    ).fetchone()
+    return row["id"] if row else 0
 
 
 def update_filing_status(
@@ -100,29 +107,52 @@ def get_pending_filings(
 
 
 def get_last_filing_of_type(
-    conn: sqlite3.Connection, stock_id: int, filing_type: str
+    conn: sqlite3.Connection, stock_id: int, filing_type: str,
+    exclude_id: int | None = None,
 ) -> dict[str, Any] | None:
-    """Most recent filing of a given type for a stock (excludes current)."""
-    row = conn.execute(
-        """SELECT * FROM filings
-           WHERE stock_id = ? AND filing_type = ?
-             AND status NOT IN ('QUEUED')
-             AND status NOT LIKE 'ERROR_%'
-           ORDER BY filing_date DESC, created_at DESC
-           LIMIT 1""",
-        (stock_id, filing_type),
-    ).fetchone()
+    """Most recent filing of a given type for a stock.
+
+    Args:
+        conn: SQLite connection.
+        stock_id: Stock ID.
+        filing_type: Filing type string.
+        exclude_id: Optional filing ID to exclude (for finding prior filings).
+
+    Returns:
+        Filing dict or None if none found.
+    """
+    if exclude_id is not None:
+        row = conn.execute(
+            """SELECT * FROM filings
+               WHERE stock_id = ? AND filing_type = ?
+                 AND id != ?
+                 AND status NOT IN ('QUEUED')
+                 AND status NOT LIKE 'ERROR_%'
+               ORDER BY filing_date DESC, created_at DESC
+               LIMIT 1""",
+            (stock_id, filing_type, exclude_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """SELECT * FROM filings
+               WHERE stock_id = ? AND filing_type = ?
+                 AND status NOT IN ('QUEUED')
+                 AND status NOT LIKE 'ERROR_%'
+               ORDER BY filing_date DESC, created_at DESC
+               LIMIT 1""",
+            (stock_id, filing_type),
+        ).fetchone()
     return dict(row) if row else None
 
 
 def insert_sections(
     conn: sqlite3.Connection, filing_id: int, sections_list: list[dict]
 ) -> None:
-    """Insert multiple sections for a filing."""
-    for sec in sections_list:
-        conn.execute(
-            """INSERT INTO sections (filing_id, header, text, chunk_hash, page_num, section_idx)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+    """Insert multiple sections for a filing (batch executemany)."""
+    conn.executemany(
+        """INSERT INTO sections (filing_id, header, text, chunk_hash, page_num, section_idx)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [
             (
                 filing_id,
                 sec["header"],
@@ -130,8 +160,10 @@ def insert_sections(
                 sec.get("chunk_hash"),
                 sec.get("page_num"),
                 sec["section_idx"],
-            ),
-        )
+            )
+            for sec in sections_list
+        ],
+    )
 
 
 def get_sections(
@@ -182,9 +214,20 @@ def get_sections_for_filings(
 def insert_diff(conn: sqlite3.Connection, diff_data: dict) -> int:
     """Insert a diff record. Returns diff id."""
     cur = conn.execute(
-        """INSERT INTO diffs (stock_id, filing_id_new, section_id_new, section_header, diff_text, changed)
-           VALUES (:stock_id, :filing_id_new, :section_id_new, :section_header, :diff_text, :changed)""",
-        diff_data,
+        """INSERT INTO diffs (stock_id, filing_id_new, filing_id_old,
+                              section_id_new, section_id_old,
+                              section_header, diff_text, changed)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            diff_data["stock_id"],
+            diff_data["filing_id_new"],
+            diff_data.get("filing_id_old"),
+            diff_data["section_id_new"],
+            diff_data.get("section_id_old"),
+            diff_data["section_header"],
+            diff_data["diff_text"],
+            diff_data["changed"],
+        ),
     )
     return cur.lastrowid
 

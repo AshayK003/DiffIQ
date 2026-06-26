@@ -5,6 +5,7 @@ from pathlib import Path
 
 SCHEMA_SQL: str = """
 PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
 PRAGMA cache_size=-64000;
 PRAGMA busy_timeout=5000;
 

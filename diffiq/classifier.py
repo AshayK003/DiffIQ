@@ -4,7 +4,7 @@ import logging
 import re
 import sqlite3
 
-from diffiq.db import get_filings_for_stock, update_filing_type
+from diffiq.db import update_filing_type
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ def classify_pending_filings(conn: sqlite3.Connection) -> int:
         count += 1
 
     if count:
+        conn.commit()
         logger.info("Classified %d pending filings", count)
 
     return count

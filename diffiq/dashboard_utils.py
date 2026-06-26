@@ -1,6 +1,15 @@
 """Utility functions extracted from the Streamlit dashboard for testability."""
 
 
+_BADGE_LABELS: dict[str, str] = {
+    "ready": "Ready",
+    "queued": "Queued",
+    "no-pdf": "No PDF",
+    "downloading": "Downloading",
+}
+_KNOWN_BADGE_CLASSES: set[str] = {"ready", "error", "queued", "no-pdf", "downloading"}
+
+
 def status_badge_html(status: str) -> str:
     """Render a color-coded status badge span.
 
@@ -17,13 +26,6 @@ def status_badge_html(status: str) -> str:
     if status.startswith("ERROR_"):
         return '<span class="badge badge-error">Error</span>'
     css = status.lower().replace("_", "-")
-    labels = {
-        "ready": "Ready",
-        "queued": "Queued",
-        "no-pdf": "No PDF",
-        "downloading": "Downloading",
-    }
-    label = labels.get(css, status)
-    known = {"ready", "error", "queued", "no-pdf", "downloading"}
-    css_class = css if css in known else "error"
+    label = _BADGE_LABELS.get(css, status)
+    css_class = css if css in _KNOWN_BADGE_CLASSES else "error"
     return f'<span class="badge badge-{css_class}">{label}</span>'

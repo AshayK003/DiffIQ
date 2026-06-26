@@ -5,11 +5,12 @@ and ERROR status exclusion in find_prior_filing.
 """
 
 from diffiq.differ import (
+    DIFF_CHANGED_MIN_LEN,
     align_sections,
     diff_section,
     find_prior_filing,
+    run_diffs_for_filing,
 )
-from diffiq.schema import init_db
 
 
 class TestAlignSections:
@@ -130,16 +131,26 @@ class TestDiffSection:
     """diff_section() edge cases."""
 
     def test_near_identical_text_under_threshold(self):
-        """Texts with a tiny change produce diff output under 100 chars → changed=False."""
+        """Texts with a tiny change produce diff output under threshold → changed=False."""
+        old_text = "a"
+        new_text = "b"
+        diff_text, changed = diff_section(new_text, old_text)
+        # diff headers (--- / +++ / @@) + one char per line = ~43 chars
+        assert len(diff_text) < DIFF_CHANGED_MIN_LEN, (
+            f"Expected diff under {DIFF_CHANGED_MIN_LEN}, got {len(diff_text)}"
+        )
+        assert changed is False
+
+    def test_medium_diff_at_threshold(self):
+        """Texts with modest change at threshold boundary — should stay under."""
         old_text = "Price: 100"
         new_text = "Price: 101"
         diff_text, changed = diff_section(new_text, old_text)
-        # diff output headers (--- previous\n+++ current\n@@ -1 +1 @@\n) +
-        # one changed line is ~70 chars — under 100
-        assert changed is False, (
-            f"Expected changed=False for tiny edit, "
-            f"got diff_text length={len(diff_text)}"
+        # ~59 chars with unified-diff headers
+        assert len(diff_text) > DIFF_CHANGED_MIN_LEN, (
+            f"Expected diff over {DIFF_CHANGED_MIN_LEN}, got {len(diff_text)}"
         )
+        assert changed is True
 
     def test_large_diff_over_threshold(self):
         """Substantially different texts should have changed=True."""
