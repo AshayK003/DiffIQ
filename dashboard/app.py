@@ -1,4 +1,4 @@
-"""DiffIQ — Streamlit Dashboard (P1)."""
+"""DiffIQ — Streamlit Dashboard."""
 
 import sys
 from pathlib import Path
@@ -14,11 +14,14 @@ import sqlite3
 from diffiq.config import STOCKS, DB_PATH
 from diffiq.dashboard_utils import status_badge_html
 from diffiq.db import (
+    add_stock,
+    get_all_stocks,
     get_diffs_for_filings,
     get_filings_for_stock,
     get_portfolio_summary,
     get_sections_for_filings,
     get_stock_by_bse_code,
+    remove_stock,
     upsert_stock,
 )
 from diffiq.schema import SCHEMA_SQL, init_db
@@ -59,40 +62,28 @@ def _get_cached_portfolio():
 
 
 @st.cache_data(ttl=30)
-def _get_cached_filings(stock_name: str, bse_code_for_cache: str):
-    """Filings list per stock, cached for 30s.
+def _get_cached_filings(bse_code: str):
+    """Filings list per stock by BSE code, cached for 30s.
 
     Args:
-        stock_name: Stock name as displayed in selectbox.
-        bse_code_for_cache: BSE code used as cache key discriminator
-            (ensures cache invalidates across stocks).
+        bse_code: BSE scrip code.
 
     Returns:
         List of filing dicts, or empty list if stock not found.
     """
-    stock = next((s for s in STOCKS if s["name"] == stock_name), None)
-    if not stock:
+    if not bse_code:
         return []
     conn = get_connection()
-    bse_code = stock.get("bse_code") or stock["name"]
     row = get_stock_by_bse_code(conn, bse_code)
     if not row:
         return []
     return get_filings_for_stock(conn, row["id"], limit=50)
 
 
-@st.cache_data(ttl=30)
-def _get_cached_stock_data(stock_name: str):
-    """Stock data dict by name, cached for 30s."""
-    return next((s for s in STOCKS if s["name"] == stock_name), None)
-
-
 # ══════════════════════════════════════════════════════════════════
-# Session init
+# Session init — seed watchlist from config on first visit
 # ══════════════════════════════════════════════════════════════════
 if "db_inited" not in st.session_state:
-    # Use a fresh connection for one-time init — avoids threading issues
-    # with @st.cache_resource when Streamlit reruns from a different thread.
     _init_conn = init_db(DB_PATH)
     for s in STOCKS:
         bse_code = s.get("bse_code") or s["name"]
@@ -154,18 +145,21 @@ else:
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════
-# Stock Selector
+# Stock Selector (from DB — STOCKS config is seed only)
 # ══════════════════════════════════════════════════════════════════
-stock_names = [s["name"] for s in STOCKS]
-selected_stock = st.selectbox("Select Stock", stock_names, index=0)
+all_stocks = get_all_stocks(get_connection())
+if not all_stocks:
+    st.info("Watchlist is empty. Add stocks using the Manage Watchlist section below.")
+    st.stop()
 
-stock_data = next(s for s in STOCKS if s["name"] == selected_stock)
-bse_code = stock_data.get("bse_code") or "-"
+stock_names = [s["name"] for s in all_stocks]
+selected_stock = st.selectbox("Select Stock", stock_names, index=0)
+stock_data = next(s for s in all_stocks if s["name"] == selected_stock)
+bse_code = stock_data["bse_code"]
 st.caption(f"BSE Code: {bse_code}")
 
 with st.spinner("Loading filings..."):
-    bse_cache_key = stock_data.get("bse_code") or stock_data["name"]
-    filings = _get_cached_filings(selected_stock, bse_cache_key)
+    filings = _get_cached_filings(bse_code)
 
 # ══════════════════════════════════════════════════════════════════
 # Filing Summary Metrics
@@ -182,14 +176,10 @@ if filings:
     cols[2].metric("Pending", pending_count)
     cols[3].metric("Errors", error_count)
 else:
-    has_bse = bool(stock_data.get("bse_code"))
-    if not has_bse:
-        st.info(f"**{selected_stock}** is an ETF — no corporate filings to track.")
-    else:
-        st.info(
-            "No filings yet. Run the pipeline first:\n\n"
-            "`python -m diffiq.pipeline`"
-        )
+    st.info(
+        "No filings yet. Run the pipeline first:\n\n"
+        "`python -m diffiq.pipeline`"
+    )
 
 st.divider()
 
@@ -279,6 +269,53 @@ if filings:
                                     diffs_by_header[header].get("diff_text", "")[:2000],
                                     language="diff",
                                 )
+
+st.divider()
+
+# ══════════════════════════════════════════════════════════════════
+# Watchlist Management
+# ══════════════════════════════════════════════════════════════════
+with st.expander("Manage Watchlist", expanded=False):
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Add Stock**")
+        add_name = st.text_input(
+            "Symbol", placeholder="e.g. INFY", key="add_name",
+        )
+        add_bse = st.text_input(
+            "BSE Code", placeholder="e.g. 500209", key="add_bse",
+        )
+        if st.button("Add to Watchlist", type="primary"):
+            if add_name and add_bse:
+                conn = get_connection()
+                add_stock(
+                    conn,
+                    add_bse.strip(),
+                    add_name.strip().upper(),
+                )
+                conn.commit()
+                st.success(
+                    f"Added {add_name.strip().upper()} ({add_bse.strip()})"
+                )
+                st.rerun()
+            else:
+                st.warning("Both symbol and BSE code are required.")
+
+    with col2:
+        st.markdown("**Current Watchlist**")
+        conn = get_connection()
+        watchlist = get_all_stocks(conn)
+        if watchlist:
+            for s in watchlist:
+                c1, c2 = st.columns([3, 1])
+                c1.write(f"{s['name']} ({s['bse_code']})")
+                if c2.button("Remove", key=f"rm_{s['id']}"):
+                    remove_stock(conn, s["id"])
+                    conn.commit()
+                    st.rerun()
+        else:
+            st.write("No stocks in watchlist.")
 
 st.caption(
     "Data source: BSE Corporate Announcements API. "

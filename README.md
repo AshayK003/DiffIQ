@@ -106,7 +106,7 @@ pip install -r requirements.txt
 ### Verify
 
 ```bash
-pytest — 91 tests should pass
+pytest — 97 tests should pass
 ```
 
 ---
@@ -155,6 +155,7 @@ Opens a browser UI at `localhost:8501`. Shows:
 - **Stock browser** — select a stock, see all filings with status badges
 - **Filing detail** — expand a filing to see its metadata, sections, and diffs against the prior filing
 - **Section diff UI** — sections with changes auto-expand with a green "Changed" badge and code diff view
+- **Watchlist management** — add/remove stocks directly from the dashboard (persisted to DB)
 
 ---
 
@@ -162,7 +163,7 @@ Opens a browser UI at `localhost:8501`. Shows:
 
 ### Stock Watchlist
 
-Edit `diffiq/config.py`:
+Edit `diffiq/config.py`, or manage from the dashboard (expand **Manage Watchlist**):
 
 ```python
 STOCKS = [
@@ -173,7 +174,7 @@ STOCKS = [
 ]
 ```
 
-Add your own holdings. Only stocks with a non-empty `bse_code` are processed by the pipeline. ETFs are shown in the dashboard portfolio (with 0 filings) but skipped during crawling.
+The config file seeds the DB on first visit. After that, you can add/remove stocks via the dashboard UI — changes persist in `diffiq.db`.
 
 ### Other Settings (also in `config.py`)
 
@@ -205,7 +206,7 @@ dashboard/
 .streamlit/
 ├── config.toml          # Streamlit theme (green, sans-serif, fast reruns)
 ├── style.css            # Stock cards, badges, diff badge styles
-tests/                   # 91 tests across 10 test files
+tests/                   # 97 tests across 10 test files
 data/                    # gitignored — runtime SQLite DB + PDF cache
 ```
 
@@ -214,7 +215,7 @@ data/                    # gitignored — runtime SQLite DB + PDF cache
 ## Testing
 
 ```bash
-pytest              # 91 tests, 0 failures expected
+pytest              # 97 tests, 0 failures expected
 pytest -v           # verbose mode
 pytest -k "sync"    # run only sync-related tests
 ```
@@ -300,7 +301,7 @@ Example: adding a "MERGER" type:
 
 ### Adding a new stock
 
-Edit `config.py:STOCKS`. Find the BSE scrip code (numeric) from the BSE website stock profile page. ETFs have no BSE code.
+Add to the watchlist via the dashboard (expand **Manage Watchlist**) or edit `config.py:STOCKS`. Find the BSE scrip code (numeric) from the BSE website stock profile page.
 
 ### Customizing the dashboard
 

@@ -321,7 +321,7 @@ def get_portfolio_summary(
                 LIMIT 1)                                               AS latest_subject
            FROM stocks s
            LEFT JOIN filings f ON f.stock_id = s.id
-           WHERE s.bse_code != ''
+           WHERE s.active = 1 AND s.bse_code != ''
            GROUP BY s.id
            ORDER BY s.name"""
     ).fetchall()
@@ -336,3 +336,61 @@ def get_stock_by_bse_code(
         "SELECT * FROM stocks WHERE bse_code = ?", (bse_code,)
     ).fetchone()
     return dict(row) if row else None
+
+
+def add_stock(
+    conn: sqlite3.Connection, bse_code: str, name: str
+) -> int:
+    """Add a stock to the watchlist (or reactivate if previously deactivated).
+
+    Args:
+        conn: SQLite connection.
+        bse_code: BSE scrip code.
+        name: Stock symbol/name (uppercased by caller).
+
+    Returns:
+        The stock ID.
+    """
+    cur = conn.execute(
+        "UPDATE stocks SET active = 1, name = ? WHERE bse_code = ?",
+        (name, bse_code),
+    )
+    if cur.rowcount:
+        row = conn.execute(
+            "SELECT id FROM stocks WHERE bse_code = ?", (bse_code,)
+        ).fetchone()
+        return row["id"]
+    conn.execute(
+        "INSERT INTO stocks (bse_code, name) VALUES (?, ?)",
+        (bse_code, name),
+    )
+    return conn.execute(
+        "SELECT id FROM stocks WHERE bse_code = ?", (bse_code,)
+    ).fetchone()["id"]
+
+
+def remove_stock(conn: sqlite3.Connection, stock_id: int) -> None:
+    """Soft-delete a stock from the watchlist (sets active=0).
+
+    Filings and their associated sections/diffs are preserved.
+
+    Args:
+        conn: SQLite connection.
+        stock_id: Stock ID to deactivate.
+    """
+    conn.execute("UPDATE stocks SET active = 0 WHERE id = ?", (stock_id,))
+
+
+def get_all_stocks(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Return all active stocks with a BSE code, ordered by name.
+
+    Args:
+        conn: SQLite connection.
+
+    Returns:
+        List of stock dicts.
+    """
+    rows = conn.execute(
+        "SELECT * FROM stocks WHERE active = 1 AND bse_code != '' ORDER BY name"
+    ).fetchall()
+    return [dict(r) for r in rows]
