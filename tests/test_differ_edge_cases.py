@@ -127,6 +127,63 @@ class TestFindPriorFiling:
         assert prior is None
 
 
+class TestAlignSectionsExtended:
+    """Additional align_sections() edge cases for empty/None headers and count mismatch."""
+
+    def test_empty_headers_match_by_text(self):
+        """Sections with empty headers fall through to text-based matching."""
+        new = [{"header": "", "text": "Revenue from operations: Rs. 100 Cr", "section_idx": 0}]
+        old = [{"header": "", "text": "Revenue from operations: Rs. 80 Cr", "section_idx": 0}]
+        aligned = align_sections(new, old)
+        assert aligned[0][1] is not None  # Matched by text similarity
+
+    def test_none_headers_treated_as_empty(self):
+        """None headers are treated as empty strings."""
+        new = [{"header": None, "text": "Some content", "section_idx": 0}]
+        old = [{"header": None, "text": "Similar content", "section_idx": 0}]
+        aligned = align_sections(new, old)
+        assert aligned[0][1] is not None
+
+    def test_extra_new_sections_get_none_match(self):
+        """New sections beyond old count get None match."""
+        new = [
+            {"header": "A", "text": "a", "section_idx": 0},
+            {"header": "B", "text": "b", "section_idx": 1},
+            {"header": "C", "text": "c", "section_idx": 2},
+        ]
+        old = [
+            {"header": "A", "text": "a", "section_idx": 0},
+        ]
+        aligned = align_sections(new, old)
+        assert len(aligned) == 3
+        assert aligned[0][1] is not None  # A matched
+        assert aligned[1][1] is None     # B unmatched
+        assert aligned[2][1] is None     # C unmatched
+
+    def test_single_section_alignment(self):
+        """Single new section aligns with single old section."""
+        new = [{"header": "Opinion", "text": "New text", "section_idx": 0}]
+        old = [{"header": "Opinion", "text": "Old text", "section_idx": 0}]
+        aligned = align_sections(new, old)
+        assert len(aligned) == 1
+        assert aligned[0][1]["header"] == "Opinion"
+
+    def test_extra_old_sections_ignored(self):
+        """Unused old sections beyond new count are ignored."""
+        new = [
+            {"header": "A", "text": "a", "section_idx": 0},
+        ]
+        old = [
+            {"header": "A", "text": "a", "section_idx": 0},
+            {"header": "B", "text": "b", "section_idx": 1},
+            {"header": "C", "text": "c", "section_idx": 2},
+        ]
+        aligned = align_sections(new, old)
+        assert len(aligned) == 1
+        assert aligned[0][1] is not None
+        assert aligned[0][1]["header"] == "A"
+
+
 class TestDiffSection:
     """diff_section() edge cases."""
 
