@@ -4,7 +4,35 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from diffiq.crawler import fetch_manifest
+from diffiq.crawler import fetch_manifest, _build_pdf_url
+
+
+class TestBuildPdfUrl:
+    """Tests for _build_pdf_url helper."""
+
+    def test_empty_string(self) -> None:
+        """Empty attachment name returns empty string."""
+        assert _build_pdf_url("") == ""
+
+    def test_normal_attachment(self) -> None:
+        """Normal attachment name produces correct URL."""
+        url = _build_pdf_url("abc123.pdf")
+
+        assert url.endswith("/abc123.pdf")
+        assert "bseindia.com" in url
+
+    def test_leading_slash_stripped(self) -> None:
+        """Leading slash is stripped to avoid double slash."""
+        url = _build_pdf_url("/abc123.pdf")
+
+        assert "//" not in url.split("https://")[1]
+
+    def test_full_url_structure(self) -> None:
+        """URL matches expected BSE format."""
+        assert (
+            _build_pdf_url("test-file.pdf")
+            == "https://www.bseindia.com/xml-data/corpfiling/AttachLive/test-file.pdf"
+        )
 
 
 class TestFetchManifest:
