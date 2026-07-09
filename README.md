@@ -98,10 +98,14 @@ source .venv/bin/activate    # Linux/Mac
 
 # Install
 pip install -r requirements.txt
+# Dev / test dependencies (pytest)
+pip install -r requirements-dev.txt
 ```
 
 > [!NOTE]
-> `uv` users: `uv pip install -r requirements.txt` works identically and is 10-50x faster.
+> `uv` users: `uv pip install -r requirements.txt && uv pip install -r requirements-dev.txt
+# Dev / test dependencies (pytest)
+pip install -r requirements-dev.txt` works identically and is 10-50x faster.
 
 ### Verify
 
