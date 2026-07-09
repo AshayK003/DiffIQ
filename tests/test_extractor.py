@@ -204,3 +204,90 @@ class TestDownloadPdfText:
         result = download_pdf_text("https://example.com/scanned.pdf")
         # Either corrupted or scanned — either way text is None
         assert result.text is None
+
+
+class TestExtractTextTruncation:
+    """_extract_text_from_pdf truncates extracted text at 1MB."""
+
+    def test_text_under_1mb_not_truncated(self):
+        """Text under 1MB is returned as-is."""
+        from diffiq.extractor import _extract_text_from_pdf
+
+        short_text = "x" * 500
+        with patch("diffiq.extractor.pypdf.PdfReader") as mock_reader:
+            mock_page = MagicMock()
+            mock_page.extract_text.return_value = short_text
+            mock_reader.return_value.pages = [mock_page]
+
+            result = _extract_text_from_pdf("https://ex.com/test.pdf", b"fake")
+            assert result.text == short_text
+            assert result.error is None
+
+    def test_text_exactly_1mb_not_truncated(self):
+        """Text exactly at 1MB is not truncated."""
+        from diffiq.extractor import _extract_text_from_pdf
+
+        exact_text = "x" * 1_000_000
+        with patch("diffiq.extractor.pypdf.PdfReader") as mock_reader:
+            mock_page = MagicMock()
+            mock_page.extract_text.return_value = exact_text
+            mock_reader.return_value.pages = [mock_page]
+
+            result = _extract_text_from_pdf("https://ex.com/test.pdf", b"fake")
+            assert result.text is not None
+            assert len(result.text) == 1_000_000
+            assert result.error is None
+
+    def test_text_over_1mb_truncated(self):
+        """Text over 1MB is truncated to 1MB."""
+        from diffiq.extractor import _extract_text_from_pdf
+
+        long_text = "x" * 1_500_000
+        with patch("diffiq.extractor.pypdf.PdfReader") as mock_reader:
+            mock_page = MagicMock()
+            mock_page.extract_text.return_value = long_text
+            mock_reader.return_value.pages = [mock_page]
+
+            result = _extract_text_from_pdf("https://ex.com/test.pdf", b"fake")
+            assert result.text is not None
+            assert len(result.text) == 1_000_000
+            assert result.error is None
+
+
+class TestDownloadOversized:
+    """Oversized PDF rejection via Content-Length and post-download size checks."""
+
+    @patch("diffiq.extractor.httpx.Client")
+    def test_content_length_over_50mb_rejected(self, mock_client_cls):
+        """PDF with Content-Length > 50MB is rejected."""
+        mock_resp = MagicMock()
+        mock_resp.headers = {"content-length": str(60 * 1024 * 1024)}
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.content = b"%PDF-fake"
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.get.return_value = mock_resp
+        mock_client_cls.return_value = mock_client
+
+        result = download_pdf_text("https://ex.com/huge.pdf")
+        assert result.text is None
+        assert result.error is not None
+
+    @patch("diffiq.extractor.httpx.Client")
+    def test_downloaded_content_over_50mb_rejected(self, mock_client_cls):
+        """Downloaded content exceeding MAX_PDF_SIZE is rejected."""
+        from diffiq.extractor import MAX_PDF_SIZE
+
+        mock_resp = MagicMock()
+        mock_resp.headers = {}  # No Content-Length header
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.content = b"x" * (MAX_PDF_SIZE + 1)
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.get.return_value = mock_resp
+        mock_client_cls.return_value = mock_client
+
+        result = download_pdf_text("https://ex.com/huge.pdf")
+        assert result.text is None
+        assert result.error is not None
+        assert "too large" in result.error.lower()
