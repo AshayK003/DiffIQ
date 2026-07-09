@@ -2,3 +2,11 @@
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short --no-header"
+
+[tool.coverage.run]
+source = ["diffiq"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 70
