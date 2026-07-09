@@ -149,3 +149,35 @@ class TestFetchManifest:
                 pytest.skip("BSE API returned empty (may be down)")
         except Exception:
             pytest.skip("BSE API unreachable — skipping live test")
+
+
+class TestBuildPdfUrl:
+    """_build_pdf_url constructs BSE attachment download URLs."""
+
+    def test_empty_string(self):
+        """Empty attachment name returns empty string."""
+        from diffiq.crawler import _build_pdf_url
+
+        assert _build_pdf_url("") == ""
+
+    def test_normal_attachment(self):
+        """Normal attachment name produces correct URL."""
+        from diffiq.crawler import _build_pdf_url
+
+        url = _build_pdf_url("abc123.pdf")
+        assert url.endswith("/abc123.pdf")
+        assert "bseindia.com" in url
+
+    def test_leading_slash_stripped(self):
+        """Leading slash is stripped to avoid double-slash in URL."""
+        from diffiq.crawler import _build_pdf_url
+
+        url = _build_pdf_url("/abc123.pdf")
+        assert "//" not in url.split("https://")[1]  # No double-slash after domain
+
+    def test_full_url_structure(self):
+        """URL matches expected BSE format."""
+        from diffiq.crawler import _build_pdf_url
+
+        url = _build_pdf_url("test-file.pdf")
+        assert url == "https://www.bseindia.com/xml-data/corpfiling/AttachLive/test-file.pdf"
