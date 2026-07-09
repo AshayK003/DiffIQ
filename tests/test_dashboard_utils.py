@@ -47,3 +47,29 @@ class TestStatusBadgeHtml:
         assert 'class="badge badge-error"' in html
         # Falls through to return the status itself as label
         assert "SOME_WEIRD_STATUS" in html
+
+
+class TestStatusBadgeHtmlEdgeCases:
+    """Edge cases for status_badge_html that can cause ugly dashboard rendering."""
+
+    def test_empty_string(self):
+        """Empty status string doesn't crash."""
+        html = status_badge_html("")
+        assert isinstance(html, str)
+        assert "badge" in html
+
+    def test_downloading_label(self):
+        """DOWNLOADING status shows 'Downloading' label, not raw string."""
+        html = status_badge_html("DOWNLOADING")
+        assert "Downloading" in html
+        assert "DOWNLOADING" not in html
+
+    def test_nested_error_status(self):
+        """Deeply nested error status maps to error badge."""
+        html = status_badge_html("ERROR_EXTRACTION_TIMEOUT")
+        assert "badge-error" in html
+
+    def test_mixed_case_ready(self):
+        """Mixed case status is normalized correctly."""
+        html = status_badge_html("Ready")
+        assert "badge-ready" in html
