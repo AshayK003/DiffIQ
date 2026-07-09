@@ -5,12 +5,14 @@ from diffiq.schema import init_db
 from diffiq.db import (
     add_stock,
     get_all_stocks,
+    get_diffs_for_filings,
     get_diffs_for_stock,
     get_filing_by_uuid,
     get_filings_for_stock,
     get_last_filing_of_type,
     get_pending_filings,
     get_sections,
+    get_sections_for_filings,
     get_stock_by_bse_code,
     insert_diff,
     insert_filing,
@@ -266,3 +268,78 @@ class TestGetAllStocks:
         stocks = get_all_stocks(conn)
         names = [s["name"] for s in stocks]
         assert names == sorted(names)
+
+
+class TestGetSectionsForFilings:
+    def test_empty_list_returns_empty_dict(self, conn) -> None:
+        """Empty filing_ids list returns empty dict."""
+        result = get_sections_for_filings(conn, [])
+        assert result == {}
+
+    def test_raises_on_too_many_ids(self, conn) -> None:
+        """ValueError raised when filing_ids exceeds 500."""
+        with pytest.raises(ValueError, match="max 500"):
+            get_sections_for_filings(conn, list(range(501)))
+
+    def test_groups_sections_by_filing(self, conn) -> None:
+        """Sections are grouped by filing_id in the result dict."""
+        stock_id = upsert_stock(conn, "500295", "VEDL")
+        f1 = insert_filing(conn, stock_id, "u1", "2026-01-01", "F1", "https://ex.com/1.pdf")
+        f2 = insert_filing(conn, stock_id, "u2", "2026-01-02", "F2", "https://ex.com/2.pdf")
+
+        insert_sections(conn, f1, [
+            {"header": "Opinion", "text": "v1", "chunk_hash": None, "page_num": 1, "section_idx": 0},
+        ])
+        insert_sections(conn, f2, [
+            {"header": "Opinion", "text": "v2", "chunk_hash": None, "page_num": 1, "section_idx": 0},
+            {"header": "Basis", "text": "b2", "chunk_hash": None, "page_num": 2, "section_idx": 1},
+        ])
+        conn.commit()
+
+        result = get_sections_for_filings(conn, [f1, f2])
+        assert f1 in result
+        assert f2 in result
+        assert len(result[f1]) == 1
+        assert len(result[f2]) == 2
+
+
+class TestGetDiffsForFilings:
+    def test_empty_list_returns_empty_dict(self, conn) -> None:
+        """Empty filing_ids list returns empty dict."""
+        result = get_diffs_for_filings(conn, [], stock_id=1)
+        assert result == {}
+
+    def test_raises_on_too_many_ids(self, conn) -> None:
+        """ValueError raised when filing_ids exceeds 500."""
+        with pytest.raises(ValueError, match="max 500"):
+            get_diffs_for_filings(conn, list(range(501)), stock_id=1)
+
+    def test_filters_by_stock_id(self, conn) -> None:
+        """Only diffs matching the given stock_id are returned."""
+        s1 = upsert_stock(conn, "500295", "VEDL")
+        s2 = upsert_stock(conn, "500180", "HDFCBANK")
+        f1 = insert_filing(conn, s1, "u1", "2026-01-01", "F1", "https://ex.com/1.pdf")
+        f2 = insert_filing(conn, s2, "u2", "2026-01-02", "F2", "https://ex.com/2.pdf")
+
+        conn.execute(
+            "INSERT INTO sections (id, filing_id, header, text, section_idx) VALUES (1, ?, 'X', 'x', 0)",
+            (f1,),
+        )
+        conn.execute(
+            "INSERT INTO sections (id, filing_id, header, text, section_idx) VALUES (2, ?, 'Y', 'y', 0)",
+            (f2,),
+        )
+
+        insert_diff(conn, {
+            "stock_id": s1, "filing_id_new": f1, "section_id_new": 1,
+            "section_header": "X", "diff_text": "d1", "changed": 1,
+        })
+        insert_diff(conn, {
+            "stock_id": s2, "filing_id_new": f2, "section_id_new": 2,
+            "section_header": "Y", "diff_text": "d2", "changed": 1,
+        })
+        conn.commit()
+
+        result = get_diffs_for_filings(conn, [f1, f2], stock_id=s1)
+        assert f1 in result
+        assert f2 not in result  # Different stock_id
