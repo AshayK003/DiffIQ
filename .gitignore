@@ -1,39 +1,25 @@
-# Dependencies
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
+# Internal engineering files — never committed
+internals/
+engineering_memory.md
 
-# Data
-data/
-*.db
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
 
 # Environment
 .env
+venv/
+.venv/
 
-# Research/planning files (not code)
-engineering_memory.md
-IMPLEMENTATION.md
-IDEA.md
-RESEARCH.md
-OSS_RESEARCH.md
-
-# Workflow artifacts
-.hermes/
-NOTES.md
-PLAN.md
-DESIGN.md
-
-# IDE / dev tooling
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # OS
-.DS_Store
 Thumbs.db
-
-# Pytest
-.pytest_cache/
+.DS_Store
