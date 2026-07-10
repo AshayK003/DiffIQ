@@ -320,3 +320,5 @@ If the symbol can't be resolved, a manual BSE code input appears for entry. You 
 ## License
 
 AGPL v3 — see [LICENSE](LICENSE).
+
+GFI duplicates: [docs/gfi-duplicates.md](docs/gfi-duplicates.md).
