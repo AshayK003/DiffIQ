@@ -23,3 +23,5 @@ venv/
 # OS
 Thumbs.db
 .DS_Store
+
+data/
