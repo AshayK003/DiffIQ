@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 
+from typing import Any
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -28,7 +29,7 @@ st.set_page_config(
 # Cached connection
 # ══════════════════════════════════════════════════════════════════
 @st.cache_resource
-def get_connection():
+def get_connection() -> sqlite3.Connection:
     """Single DB connection per session — avoids re-init on every rerun.
 
     check_same_thread=False is required because Streamlit may invoke
@@ -47,14 +48,14 @@ def get_connection():
 # Cached data helpers (30s TTL — avoids repeated SQLite hits on rerun)
 # ══════════════════════════════════════════════════════════════════
 @st.cache_data(ttl=30)
-def _get_cached_portfolio():
+def _get_cached_portfolio() -> list[dict[str, Any]]:
     """Portfolio summary, cached for 30s."""
     conn = get_connection()
     return db.get_portfolio_summary(conn)
 
 
 @st.cache_data(ttl=30)
-def _get_cached_filings(bse_code: str):
+def _get_cached_filings(bse_code: str) -> list[dict[str, Any]]:
     """Filings list per stock by BSE code, cached for 30s.
 
     Args:
