@@ -1,9 +1,10 @@
 """Section-aligned text differ — compares sections against prior filings."""
 
 import difflib
-import logging
 import sqlite3
 from typing import Any
+
+import structlog
 
 from diffiq.db import (
     get_last_filing_of_type,
@@ -11,7 +12,7 @@ from diffiq.db import (
     insert_diff,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 ALIGNMENT_THRESHOLD: float = 0.6
 # Minimum diff output length to flag as "changed". Unified-diff headers alone

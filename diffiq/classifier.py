@@ -1,12 +1,13 @@
 """Filing type classifier — regex-based subject matching."""
 
-import logging
 import re
 import sqlite3
 
+import structlog
+
 from diffiq.db import update_filing_type
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class _FilingClassifier:
     """Filing type classifier with pre-compiled regex patterns."""

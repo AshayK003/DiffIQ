@@ -5,7 +5,6 @@ for single-responsibility — extraction belongs with the extractor).
 """
 
 import io
-import logging
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -13,12 +12,13 @@ from typing import Any
 
 import httpx
 import pypdf
+import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from diffiq.config import PDF_DOWNLOAD_TIMEOUT
 from diffiq.db import insert_sections
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 USER_AGENT: str = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

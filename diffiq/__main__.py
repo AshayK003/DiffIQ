@@ -1,48 +1,45 @@
-"""Allow running DiffIQ pipeline via `python -m diffiq`."""
+"""DiffIQ CLI — Corporate Filing Monitor.
 
-import argparse
-import logging
-import sys
+Usage:
+    python -m diffiq run          Run daily pipeline
+    python -m diffiq backlog      Retry failed/queued filings
+    python -m diffiq sync         Backfill sections and diffs
+    python -m diffiq run --verbose
+"""
 
-from diffiq.pipeline import run_daily_pipeline, run_backlog, sync
+import fire
+import structlog
+
+from diffiq.pipeline import run_daily_pipeline, run_backlog, sync as _pipeline_sync
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_log_level,
+        structlog.dev.ConsoleRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        prog="diffiq",
-        description="DiffIQ — Corporate Filing Monitor",
-    )
-    sub = parser.add_subparsers(dest="command")
+def run(verbose: bool = False) -> None:
+    """Run daily pipeline (crawl + extract + diff)."""
+    structlog.get_logger().info("Running daily pipeline")
+    run_daily_pipeline()
 
-    sub.add_parser("run", help="Run daily pipeline (crawl + extract + diff)")
-    sub.add_parser("backlog", help="Retry failed/queued filings")
-    sub.add_parser("sync", help="Backfill sections and diffs for READY filings")
 
-    parser.add_argument(
-        "-v", "--verbose", action="store_true",
-        help="Enable debug logging",
-    )
+def backlog() -> None:
+    """Retry failed/queued filings."""
+    structlog.get_logger().info("Retrying failed/queued filings")
+    run_backlog()
 
-    args = parser.parse_args()
 
-    level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-
-    if args.command == "run":
-        run_daily_pipeline()
-    elif args.command == "backlog":
-        run_backlog()
-    elif args.command == "sync":
-        sync()
-    else:
-        parser.print_help()
-        return 1
-
-    return 0
+def sync_() -> None:
+    """Backfill sections and diffs for READY filings."""
+    structlog.get_logger().info("Backfilling sections and diffs")
+    _pipeline_sync()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    fire.Fire({"run": run, "backlog": backlog, "sync": sync_})

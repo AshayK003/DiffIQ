@@ -4,16 +4,16 @@ Uses the `bse` Python package (https://pypi.org/project/bse/) which wraps
 the undocumented BSE API with proper session handling and throttling.
 """
 
-import logging
 from typing import Any
 from urllib.parse import urljoin
 
+import structlog
 from bse import BSE
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from diffiq.config import BSE_PDF_BASE
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _build_pdf_url(attachment_name: str) -> str:

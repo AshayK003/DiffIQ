@@ -1,9 +1,10 @@
 """P1 pipeline — crawl BSE, download PDFs, extract text, classify, sectionize, diff."""
 
 import sqlite3
-import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from time import sleep
+
+import structlog
 
 from diffiq.classifier import classify_filing
 from diffiq.config import STOCKS, DB_PATH, CRAWL_DELAY_SECONDS
@@ -20,7 +21,7 @@ from diffiq.differ import run_diffs_for_filing
 from diffiq.extractor import ExtractionResult, extract_and_store_sections, download_pdf_text
 from diffiq.schema import init_db
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _acquire_pipeline_lock(conn: sqlite3.Connection) -> None:
@@ -373,8 +374,13 @@ def sync(
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    structlog.configure(
+        processors=[
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_log_level,
+            structlog.dev.ConsoleRenderer(),
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
     )
     run_daily_pipeline()

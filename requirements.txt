@@ -3,3 +3,5 @@ httpx>=0.27,<1.0
 streamlit>=1.35,<2.0
 bse>=0.1.0
 tenacity>=8.2,<10.0
+fire>=0.7,<1.0
+structlog>=25.0,<26.0
