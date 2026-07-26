@@ -1,3 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffiq"
+version = "0.1.0"
+description = "BSE corporate filings pipeline — crawl, extract, classify, sectionize, diff"
+requires-python = ">=3.10"
+dependencies = [
+    "pypdf>=3.17,<6.0",
+    "httpx>=0.27,<1.0",
+    "streamlit>=1.35,<2.0",
+    "bse>=0.1.0",
+    "tenacity>=8.2,<10.0",
+    "fire>=0.7,<1.0",
+    "structlog>=25.0,<26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11",
+    "mypy>=1.15",
+    "pytest>=8.3",
+]
+
+[project.scripts]
+diffiq = "diffiq.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["diffiq*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -10,3 +42,11 @@ omit = ["tests/*"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 70
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+ignore = ["E501"]
