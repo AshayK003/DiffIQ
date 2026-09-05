@@ -143,15 +143,17 @@ class TestDownloadPdfText:
         """Valid PDF returns ExtractionResult with text."""
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
-        mock_resp.headers = {}
-        mock_resp.content = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj trailer<</Root 1 0 R>>"
+        mock_resp.url = "https://www.bseindia.com/xml-data/test.pdf"
+        mock_resp.iter_bytes.return_value = [b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj trailer<</Root 1 0 R>>"]
+        mock_stream = MagicMock()
+        mock_stream.__enter__.return_value = mock_resp
         mock_client = MagicMock()
         mock_client.__enter__.return_value = mock_client
-        mock_client.get.return_value = mock_resp
+        mock_client.stream.return_value = mock_stream
         mock_client_cls.return_value = mock_client
 
         # pdf content is a real-ish PDF but pypdf still extracts nothing from it
-        result = download_pdf_text("https://example.com/test.pdf")
+        result = download_pdf_text("https://www.bseindia.com/xml-data/test.pdf")
         # pypdf either extracts text or returns None if it can't parse
         assert result.error is None or result.error.startswith("Corrupted PDF")
         # The important thing: no crash, always returns ExtractionResult
@@ -161,12 +163,12 @@ class TestDownloadPdfText:
         """HTTP error returns ExtractionResult with error description."""
         mock_client = MagicMock()
         mock_client.__enter__.return_value = mock_client
-        mock_client.get.side_effect = httpx.HTTPStatusError(
+        mock_client.stream.side_effect = httpx.HTTPStatusError(
             "404 Not Found", request=MagicMock(), response=MagicMock()
         )
         mock_client_cls.return_value = mock_client
 
-        result = download_pdf_text("https://example.com/missing.pdf")
+        result = download_pdf_text("https://www.bseindia.com/xml-data/missing.pdf")
         assert result.text is None
         assert result.error is not None
         assert "Download failed" in result.error
@@ -176,14 +178,16 @@ class TestDownloadPdfText:
         """Non-PDF content returns ExtractionResult with error."""
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
-        mock_resp.headers = {}
-        mock_resp.content = b"Not a PDF at all, just some text content"
+        mock_resp.url = "https://www.bseindia.com/xml-data/corrupted.pdf"
+        mock_resp.iter_bytes.return_value = [b"Not a PDF at all, just some text content"]
+        mock_stream = MagicMock()
+        mock_stream.__enter__.return_value = mock_resp
         mock_client = MagicMock()
         mock_client.__enter__.return_value = mock_client
-        mock_client.get.return_value = mock_resp
+        mock_client.stream.return_value = mock_stream
         mock_client_cls.return_value = mock_client
 
-        result = download_pdf_text("https://example.com/corrupted.pdf")
+        result = download_pdf_text("https://www.bseindia.com/xml-data/corrupted.pdf")
         assert result.text is None
         assert result.error is not None
 
@@ -192,16 +196,18 @@ class TestDownloadPdfText:
         """PDF with very short text (< 100 chars) returns error."""
         mock_resp = MagicMock()
         mock_resp.raise_for_status.return_value = None
-        mock_resp.headers = {}
-        mock_resp.content = b"%PDF-1.4 tiny doc..."
+        mock_resp.url = "https://www.bseindia.com/xml-data/scanned.pdf"
+        mock_resp.iter_bytes.return_value = [b"%PDF-1.4 tiny doc..."]
+        mock_stream = MagicMock()
+        mock_stream.__enter__.return_value = mock_resp
         mock_client = MagicMock()
         mock_client.__enter__.return_value = mock_client
-        mock_client.get.return_value = mock_resp
+        mock_client.stream.return_value = mock_stream
         mock_client_cls.return_value = mock_client
 
         # Make pypdf return short text by having it actually parse
         # We mock inside pypdf instead
-        result = download_pdf_text("https://example.com/scanned.pdf")
+        result = download_pdf_text("https://www.bseindia.com/xml-data/scanned.pdf")
         # Either corrupted or scanned — either way text is None
         assert result.text is None
 
@@ -275,19 +281,21 @@ class TestDownloadOversized:
 
     @patch("diffiq.extractor.httpx.Client")
     def test_downloaded_content_over_50mb_rejected(self, mock_client_cls):
-        """Downloaded content exceeding MAX_PDF_SIZE is rejected."""
+        """Downloaded content exceeding MAX_PDF_SIZE is rejected mid-stream."""
         from diffiq.extractor import MAX_PDF_SIZE
 
         mock_resp = MagicMock()
-        mock_resp.headers = {}  # No Content-Length header
         mock_resp.raise_for_status.return_value = None
-        mock_resp.content = b"x" * (MAX_PDF_SIZE + 1)
+        mock_resp.url = "https://www.bseindia.com/xml-data/huge.pdf"
+        mock_resp.iter_bytes.return_value = [b"x" * (MAX_PDF_SIZE + 1)]
+        mock_stream = MagicMock()
+        mock_stream.__enter__.return_value = mock_resp
         mock_client = MagicMock()
         mock_client.__enter__.return_value = mock_client
-        mock_client.get.return_value = mock_resp
+        mock_client.stream.return_value = mock_stream
         mock_client_cls.return_value = mock_client
 
-        result = download_pdf_text("https://ex.com/huge.pdf")
+        result = download_pdf_text("https://www.bseindia.com/xml-data/huge.pdf")
         assert result.text is None
         assert result.error is not None
         assert "too large" in result.error.lower()

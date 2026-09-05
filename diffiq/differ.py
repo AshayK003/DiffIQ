@@ -80,7 +80,7 @@ def align_sections(
             ).ratio()
 
             text_ratio = 0.0
-            if header_ratio > 0:
+            if header_ratio >= ALIGNMENT_THRESHOLD:
                 text_ratio = header_ratio
             elif (new_sec.get("text") or "") and (old_sec.get("text") or ""):
                 text_ratio = difflib.SequenceMatcher(

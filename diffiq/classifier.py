@@ -14,7 +14,8 @@ class _FilingClassifier:
 
     def __init__(self) -> None:
         self._patterns: list[tuple[str, re.Pattern]] = [
-            ("AUDIT_REPORT", re.compile(r"\baudit", re.IGNORECASE)),
+            # FINANCIAL_RESULT before AUDIT_REPORT: "audit of quarterly
+            # results" is a results filing, not an audit filing.
             (
                 "FINANCIAL_RESULT",
                 re.compile(
@@ -23,9 +24,16 @@ class _FilingClassifier:
                     re.IGNORECASE,
                 ),
             ),
+            ("AUDIT_REPORT", re.compile(r"\baudit", re.IGNORECASE)),
             ("RPT", re.compile(r"\b(?:related\s*party|rpt)\b", re.IGNORECASE)),
             ("PROMOTER_CHANGE", re.compile(r"\b(?:promoter|pledge|shareholding\s*pattern)\b", re.IGNORECASE)),
-            ("BOARD_OUTCOME", re.compile(r"\bboard\b.*\b(?:meeting|outcome|resolution)\b", re.IGNORECASE)),
+            # Either word order: "Board Meeting Outcome" and
+            # "Outcome of the Board meeting" must both match.
+            ("BOARD_OUTCOME", re.compile(
+                r"\bboard\b.*\b(?:meeting|outcome|resolution)\b"
+                r"|\b(?:meeting|outcome|resolution)\b.*\bboard\b",
+                re.IGNORECASE,
+            )),
         ]
 
     def classify(self, subject: str) -> str:

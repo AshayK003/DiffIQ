@@ -4,6 +4,7 @@ Also handles PDF download and text extraction (moved from pipeline.py
 for single-responsibility — extraction belongs with the extractor).
 """
 
+import hashlib
 import io
 import re
 import sqlite3
@@ -42,6 +43,23 @@ class ExtractionResult:
     error: str | None
 
 
+def _is_bse_pdf_url(url: str) -> bool:
+    """Allowlist guard for PDF fetches: https + bseindia.com only.
+
+    Localhost/private use is NOT a case here (BSE hosts public filings),
+    so anything off-host is rejected — including post-redirect URLs.
+    """
+    from urllib.parse import urlparse
+    try:
+        parts = urlparse(url or "")
+    except ValueError:
+        return False
+    if parts.scheme != "https":
+        return False
+    host = (parts.hostname or "").lower()
+    return host == "bseindia.com" or host.endswith(".bseindia.com")
+
+
 def _download_pdf(pdf_url: str) -> bytes | None:
     """Download a PDF with retry support and size checking.
 
@@ -60,27 +78,30 @@ def _download_pdf(pdf_url: str) -> bytes | None:
         ),
     )
     def _inner() -> bytes:
+        if not _is_bse_pdf_url(pdf_url):
+            raise ValueError(f"PDF host not allowlisted: {pdf_url}")
         with httpx.Client(timeout=PDF_DOWNLOAD_TIMEOUT) as client:
-            resp = client.get(pdf_url, headers={"User-Agent": USER_AGENT})
-            resp.raise_for_status()
-
-        # Reject oversized responses (>50MB) to prevent OOM
-        content_length = resp.headers.get("content-length")
-        if content_length and int(content_length) > MAX_PDF_SIZE:
-            raise ValueError(f"PDF too large: {content_length} bytes")
-
-        return resp.content
+            with client.stream("GET", pdf_url, headers={"User-Agent": USER_AGENT}) as resp:
+                resp.raise_for_status()
+                final_url = str(resp.url)
+                if not _is_bse_pdf_url(final_url):
+                    raise ValueError(f"PDF redirect left allowlist: {final_url}")
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in resp.iter_bytes(65536):
+                    total += len(chunk)
+                    if total > MAX_PDF_SIZE:
+                        raise ValueError(f"PDF too large (>{MAX_PDF_SIZE} bytes)")
+                    chunks.append(chunk)
+                return b"".join(chunks)
 
     try:
         return _inner()
-    except httpx.HTTPError as e:
-        logger.warning("PDF download failed: %s — %s", pdf_url, e)
-        return None
     except httpx.InvalidURL as e:
         logger.warning("Invalid PDF URL: %s — %s", pdf_url, e)
         return None
-    except ValueError as e:
-        logger.warning("PDF rejected: %s — %s", pdf_url, e)
+    except httpx.HTTPError as e:
+        logger.warning("PDF download failed: %s — %s", pdf_url, e)
         return None
 
 
@@ -122,7 +143,10 @@ def download_pdf_text(pdf_url: str) -> ExtractionResult:
     Returns:
         ExtractionResult with text on success, or error description on failure.
     """
-    raw_bytes = _download_pdf(pdf_url)
+    try:
+        raw_bytes = _download_pdf(pdf_url)
+    except ValueError as e:
+        return ExtractionResult(text=None, error=str(e))
     if raw_bytes is None:
         return ExtractionResult(text=None, error=f"Download failed for {pdf_url}")
     if len(raw_bytes) > MAX_PDF_SIZE:
@@ -168,20 +192,20 @@ GENERIC_PATTERNS: list[str] = [
 ]
 
 
-def _compile_group_patterns(patterns: list[str]) -> re.Pattern | None:
+def _compile_group_patterns(patterns: list[str], flags: int = re.IGNORECASE | re.MULTILINE) -> re.Pattern | None:
     """Compile a list of patterns into a single alternation regex."""
     if not patterns:
         return None
     joined = "|".join(f"(?:{p})" for p in patterns)
-    return re.compile(joined, re.IGNORECASE | re.MULTILINE)
+    return re.compile(joined, flags)
 
 
-def _extract_by_headers(text: str, patterns: list[str]) -> list[dict[str, Any]]:
+def _extract_by_headers(text: str, patterns: list[str], flags: int = re.IGNORECASE | re.MULTILINE) -> list[dict[str, Any]]:
     """Split text at each section header match.
 
     Each section gets {header, text, page_num: 0, section_idx}.
     """
-    header_re = _compile_group_patterns(patterns)
+    header_re = _compile_group_patterns(patterns, flags)
     if not header_re:
         return []
 
@@ -234,7 +258,9 @@ def extract_sections(
         if sections:
             return sections
 
-    generic_sections = _extract_by_headers(raw_text, GENERIC_PATTERNS)
+    # Generic all-caps-header pass is case-SENSITIVE: with IGNORECASE the
+    # ^[A-Z] pattern matches any 5+ char line and shreds plain-body filings.
+    generic_sections = _extract_by_headers(raw_text, GENERIC_PATTERNS, flags=re.MULTILINE)
     if generic_sections:
         return generic_sections
 
@@ -264,6 +290,8 @@ def extract_and_store_sections(
         The list of section dicts that were stored.
     """
     sections = extract_sections(raw_text, filing_type)
+    for sec in sections:
+        sec["chunk_hash"] = hashlib.sha256((sec.get("text") or "").encode("utf-8")).hexdigest()
     insert_sections(conn, filing_id, sections)
     logger.debug(
         "Stored %d sections for filing %d", len(sections), filing_id

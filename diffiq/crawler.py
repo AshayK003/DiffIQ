@@ -6,14 +6,33 @@ the undocumented BSE API with proper session handling and throttling.
 
 from typing import Any
 from urllib.parse import urljoin
+from datetime import datetime
 
 import structlog
 from bse import BSE
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from diffiq.config import BSE_PDF_BASE
+from diffiq.config import BSE_PDF_BASE, PDF_CACHE_DIR
 
 logger = structlog.get_logger(__name__)
+
+
+def _parse_filing_date(dt_raw: str) -> str:
+    """Normalize a BSE datetime to YYYY-MM-DD; "" when unparseable.
+
+    Accepts ISO datetimes ("2026-06-25T11:02:46.533"), plain YYYY-MM-DD,
+    and DD-MM-YYYY. Anything else yields "" (caller skips date ordering
+    rather than storing garbage).
+    """
+    dt_raw = (dt_raw or "").strip()
+    if not dt_raw:
+        return ""
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(dt_raw[:26], fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
 
 
 def _build_pdf_url(attachment_name: str) -> str:
@@ -36,7 +55,8 @@ def _build_pdf_url(attachment_name: str) -> str:
 )
 def _raw_fetch_manifest(bse_code: str) -> dict:
     """Inner fetch with retry — wrapped by fetch_manifest for logging."""
-    with BSE(download_folder="./") as b:
+    PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    with BSE(download_folder=str(PDF_CACHE_DIR)) as b:
         return b.announcements(scripcode=bse_code, page_no=1)
 
 
@@ -72,9 +92,11 @@ def fetch_manifest(bse_code: str) -> list[dict[str, Any]]:
         if not news_id:
             continue
 
-        # BSE returns ISO datetime like "2026-06-25T11:02:46.533"
-        dt_raw: str = (entry.get("DT_TM") or entry.get("NEWS_DT") or "")[:10]
-        filing_date: str = dt_raw  # Already YYYY-MM-DD in ISO format
+        # BSE returns ISO datetime like "2026-06-25T11:02:46.533".
+        # Validate — a DD-MM-YYYY or garbage value would silently corrupt
+        # ORDER BY filing_date prior-filing selection downstream.
+        dt_raw: str = entry.get("DT_TM") or entry.get("NEWS_DT") or ""
+        filing_date: str = _parse_filing_date(dt_raw)
 
         attachment: str = (entry.get("ATTACHMENTNAME") or "").strip()
         subject: str = (entry.get("NEWSSUB") or "").strip()

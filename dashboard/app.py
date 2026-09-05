@@ -2,6 +2,8 @@
 
 import sys
 from pathlib import Path
+import html
+import re
 
 from typing import Any
 import streamlit as st
@@ -121,8 +123,8 @@ if summary:
             with cols[j]:
                 st.markdown(
                     f'<div class="stock-card">'
-                    f'<div class="stock-card-name">{stock["name"]}</div>'
-                    f'<div class="stock-card-code">{stock["bse_code"]}</div>'
+                    f'<div class="stock-card-name">{html.escape(str(stock["name"]))}</div>'
+                    f'<div class="stock-card-code">{html.escape(str(stock["bse_code"]))}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -149,6 +151,9 @@ with col1:
     symbol = st.text_input(
         "Symbol", placeholder="e.g. INFY", key="add_symbol",
     )
+    if symbol and not re.fullmatch(r"[A-Z0-9.\-]{1,20}", symbol.strip().upper()):
+        st.warning("Symbol looks invalid (A-Z, 0-9, ., - only).")
+        symbol = ""
 
     # Manual BSE code input — shown only when auto-lookup fails
     if st.session_state.get("show_manual_bse"):
@@ -158,11 +163,14 @@ with col1:
         )
         if st.button("Add Manually", type="secondary"):
             if symbol and manual_bse:
-                conn = get_connection()
-                db.add_stock(conn, manual_bse.strip(), symbol.strip().upper())
-                conn.commit()
-                st.session_state.show_manual_bse = False
-                st.rerun()
+                if not re.fullmatch(r"\d{6}", (manual_bse or "").strip()):
+                    st.warning("BSE code must be 6 digits.")
+                else:
+                    conn = get_connection()
+                    db.add_stock(conn, manual_bse.strip(), symbol.strip().upper())
+                    conn.commit()
+                    st.session_state.show_manual_bse = False
+                    st.rerun()
             else:
                 st.warning("Both symbol and BSE code are required.")
 
@@ -173,7 +181,9 @@ with col1:
             # 1. Auto-resolve BSE code
             try:
                 from bse import BSE
-                with BSE(download_folder=".") as b:
+                from diffiq.config import PDF_CACHE_DIR
+                PDF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                with BSE(download_folder=str(PDF_CACHE_DIR)) as b:
                     result = b.lookup(symbol.strip().upper())
             except Exception:
                 result = None
@@ -304,13 +314,18 @@ else:
                 expanded=False,
             ):
                 meta = st.columns([1.2, 1.2, 1, 0.8])
-                meta[0].markdown(f"**Type:** {f.get('filing_type') or '-'}")
+                meta[0].markdown(f"**Type:** {html.escape(str(f.get('filing_type') or '-'))}")
                 meta[1].markdown(
                     f"**Status:** {status_badge_html(status)}",
                     unsafe_allow_html=True,
                 )
                 meta[2].markdown(f"**ID:** {fid}")
-                meta[3].markdown(f"[PDF]({f.get('pdf_url', '')})")
+                _pdf_url = str(f.get('pdf_url', '') or '')
+                _pdf_scheme = _pdf_url.split(':', 1)[0].lower()
+                if _pdf_scheme in ("http", "https"):
+                    meta[3].markdown(f"[PDF]({_pdf_url})")
+                elif _pdf_url:
+                    meta[3].markdown("PDF unavailable")
 
                 if f.get("error"):
                     st.error(f"Error: {f['error']}")

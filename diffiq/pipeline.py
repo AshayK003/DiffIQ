@@ -2,6 +2,7 @@
 
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from time import sleep
 
 import structlog
@@ -24,18 +25,46 @@ from diffiq.schema import init_db
 logger = structlog.get_logger(__name__)
 
 
+_LOCK_TIMEOUT_SECONDS = 2 * 3600
+
+
 def _acquire_pipeline_lock(conn: sqlite3.Connection) -> None:
     """Advisory lock to prevent concurrent pipeline runs.
 
-    Uses a dedicated table with INSERT OR ABORT semantics — the second
-    concurrent pipeline instance will block on the UNIQUE constraint
-    until the first one commits/closes its transaction.
+    First holder wins via UNIQUE(id): a second instance gets IntegrityError
+    instead of destroying the first holder's row (the old DELETE+INSERT did
+    exactly that). Stale locks (crash without release) are stolen after
+    _LOCK_TIMEOUT_SECONDS.
     """
     conn.execute(
         "CREATE TABLE IF NOT EXISTS _pipeline_lock "
         "(id INTEGER PRIMARY KEY, locked_at TEXT NOT NULL DEFAULT (datetime('now')))"
     )
-    conn.execute("DELETE FROM _pipeline_lock")
+    conn.commit()
+    try:
+        conn.execute("INSERT INTO _pipeline_lock (id) VALUES (1)")
+        conn.commit()
+        return
+    except sqlite3.IntegrityError:
+        conn.rollback()
+    row = conn.execute("SELECT locked_at FROM _pipeline_lock WHERE id = 1").fetchone()
+    # Index access (not ["locked_at"]): callers may pass connections
+    # without sqlite3.Row factory, where subscripting raises TypeError.
+    locked_at = None
+    if row is not None:
+        try:
+            locked_at = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            locked_at = None
+    # locked_at is stored by SQLite datetime('now') = UTC naive; compare in
+    # UTC or every fresh lock looks hours stale (local tz offset).
+    age = (
+        (datetime.now(timezone.utc) - locked_at.replace(tzinfo=timezone.utc)).total_seconds()
+        if locked_at else float("inf")
+    )
+    if age < _LOCK_TIMEOUT_SECONDS:
+        raise RuntimeError("another pipeline instance is running")
+    conn.execute("DELETE FROM _pipeline_lock WHERE id = 1")
     conn.execute("INSERT INTO _pipeline_lock (id) VALUES (1)")
     conn.commit()
 
@@ -353,12 +382,11 @@ def sync(
                 logger.info("  Filing %d has no raw_text — skipping", filing_id)
                 continue
 
-            existing = conn.execute(
-                "SELECT COUNT(*) as cnt FROM sections WHERE filing_id = ?",
-                (filing_id,),
-            ).fetchone()
-            if existing and existing["cnt"] == 0:
-                extract_and_store_sections(conn, filing_id, raw_text, filing_type)
+            # Always refresh: sections derive from raw_text + current extractor
+            # code, so reusing old rows silently keeps stale sections while
+            # diffs below are recomputed.
+            conn.execute("DELETE FROM sections WHERE filing_id = ?", (filing_id,))
+            extract_and_store_sections(conn, filing_id, raw_text, filing_type)
 
             # Remove old diffs for this filing before re-running to avoid duplicates
             conn.execute("DELETE FROM diffs WHERE filing_id_new = ?", (filing_id,))
